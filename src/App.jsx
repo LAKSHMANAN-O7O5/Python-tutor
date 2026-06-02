@@ -29,6 +29,8 @@ const TOPIC_PROMPTS = {
 };
 
 const STORAGE_KEY = "pybro-history-v1";
+const MIN_REQUEST_GAP = 3000; // ms between API calls to avoid rate limits
+let lastRequestTime = 0;
 
 function parseContent(text) {
   const parts = [];
@@ -130,6 +132,14 @@ export default function PythonTutor() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const callGemini = async (userMsg, history) => {
+    // Throttle: wait if we sent a request too recently
+    const now = Date.now();
+    const elapsed = now - lastRequestTime;
+    if (elapsed < MIN_REQUEST_GAP) {
+      await new Promise(r => setTimeout(r, MIN_REQUEST_GAP - elapsed));
+    }
+    lastRequestTime = Date.now();
+
     // Convert history to Gemini format
     const contents = history.map(m => ({
       role: m.role === "assistant" ? "model" : "user",
@@ -150,6 +160,9 @@ export default function PythonTutor() {
     const data = await res.json();
     if (!res.ok) {
       console.error("API Error:", data);
+      if (res.status === 429) {
+        return "Bro, too many requests right now 🫣 Wait a few seconds and try again — free tier has limits!";
+      }
       return `Bro something went wrong: ${data.error?.message || res.statusText}`;
     }
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "Bro something went wrong, try again!";
